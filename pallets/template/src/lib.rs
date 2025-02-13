@@ -23,6 +23,7 @@ pub mod pallet {
     use sp_core::hashing::blake2_256;
     use sp_runtime::traits::SaturatedConversion;
 
+
     #[pallet::pallet]
     pub struct Pallet<T>(_);
 
@@ -34,7 +35,7 @@ pub mod pallet {
     }
 
     // Birthday struct to store date information
-    #[derive(Clone, Encode, Decode, TypeInfo, MaxEncodedLen)]
+    #[derive(Clone, Encode, Decode, TypeInfo, MaxEncodedLen, Debug)]
     pub struct Birthday {
         pub year: u16,
         pub month: u8,
@@ -42,7 +43,7 @@ pub mod pallet {
     }
 
     // Tweet struct to store tweet data with timestamp
-    #[derive(Clone, Encode, Decode, TypeInfo, MaxEncodedLen)]
+    #[derive(Clone, Encode, Decode, TypeInfo, MaxEncodedLen, Debug)]
     pub struct Tweet<AccountId> {
         pub author_id: AccountId,
         pub name: BoundedVec<u8, ConstU32<256>>,
@@ -281,6 +282,184 @@ pub mod pallet {
                 Self::deposit_event(Event::LoginFailed { name });
                 Err(Error::<T>::InvalidCredentials.into())
             }
+
+
         }
+
+
+            // CREATE (Already Implemented: create_user & create_tweet)
+
+            // READ: Fetch user birthday
+        #[pallet::call_index(3)]
+        #[pallet::weight(<T as pallet::Config>::WeightInfo::get_user_birthday())]
+        pub fn get_user_birthday(
+            origin: OriginFor<T>,
+            user: T::AccountId,
+        ) -> DispatchResult {
+            ensure_signed(origin)?;
+
+            let birthday = Birthdays::<T>::get(&user).ok_or(Error::<T>::UserNotFound)?;
+
+            log::info!("User {:?} has birthday: {:?}", user, birthday);
+            Ok(())
+        }
+
+            // READ: Fetch all tweets by a user
+            #[pallet::call_index(4)]
+            #[pallet::weight(<T as pallet::Config>::WeightInfo::get_user_tweets())]
+            pub fn get_user_tweets(
+                origin: OriginFor<T>,
+                name: BoundedVec<u8, ConstU32<256>>,
+            ) -> DispatchResult {
+                ensure_signed(origin)?;
+
+                let account = AccountByName::<T>::get(&name)
+                .ok_or(Error::<T>::UserNotFound)?;
+
+                let tweet_count = TweetCount::<T>::get(&account);
+                for tweet_id in 0..tweet_count {
+                    if let Some(tweet) = Tweets::<T>::get(&account, tweet_id) {
+                        log::info!("Tweet ID {}: {:?}", tweet_id, tweet);
+                    }
+                }
+                Ok(())
+            }
+
+            // UPDATE: Change user name
+            #[pallet::call_index(5)]
+            #[pallet::weight(<T as pallet::Config>::WeightInfo::update_user_name())]
+            pub fn update_user_name(
+                origin: OriginFor<T>,
+                name: BoundedVec<u8, ConstU32<256>>,
+                password: BoundedVec<u8, ConstU32<256>>,
+                new_name: BoundedVec<u8, ConstU32<256>>,
+            ) -> DispatchResult {
+                let who = ensure_signed(origin)?;
+
+                let account = AccountByName::<T>::get(&name)
+                .ok_or(Error::<T>::UserNotFound)?;
+
+                let stored_hash = PasswordHash::<T>::get(&account)
+                .ok_or(Error::<T>::UserNotFound)?;
+
+                let password_hash = blake2_256(&password[..]);
+
+                ensure!(password_hash == stored_hash, Error::<T>::InvalidCredentials);
+
+                // Ensure new name isn't taken
+                ensure!(!AccountByName::<T>::contains_key(&new_name), Error::<T>::NameAlreadyTaken);
+
+                // Remove old name mapping
+                if let Some(old_name) = Names::<T>::take(&who) {
+                    AccountByName::<T>::remove(&old_name);
+                }
+
+                // Store new name
+                Names::<T>::insert(&who, new_name.clone());
+                AccountByName::<T>::insert(&new_name, who.clone());
+
+                Self::deposit_event(Event::NameStored { name: new_name, who });
+
+                Ok(())
+            }
+
+            // UPDATE: Change user password
+            #[pallet::call_index(6)]
+            #[pallet::weight(<T as pallet::Config>::WeightInfo::update_password())]
+            pub fn update_password(
+                origin: OriginFor<T>,
+                name: BoundedVec<u8, ConstU32<256>>,
+                old_password: BoundedVec<u8, ConstU32<256>>,
+                new_password: BoundedVec<u8, ConstU32<256>>,
+            ) -> DispatchResult {
+
+                let who = ensure_signed(origin)?;
+
+                let account = AccountByName::<T>::get(&name)
+                .ok_or(Error::<T>::UserNotFound)?;
+
+                let stored_hash = PasswordHash::<T>::get(&account)
+                .ok_or(Error::<T>::UserNotFound)?;
+
+                let old_hash = blake2_256(&old_password[..]);
+
+                ensure!(old_hash == stored_hash, Error::<T>::InvalidCredentials);
+
+                let new_hash = blake2_256(&new_password[..]);
+                PasswordHash::<T>::insert(&who, new_hash);
+
+                Self::deposit_event(Event::PasswordHashed { who });
+
+                Ok(())
+            }
+
+            // DELETE: Remove a tweet
+            #[pallet::call_index(7)]
+            #[pallet::weight(<T as pallet::Config>::WeightInfo::delete_tweet())]
+            pub fn delete_tweet(
+                origin: OriginFor<T>,
+                name: BoundedVec<u8, ConstU32<256>>,
+                tweet_id: u32,
+                password: BoundedVec<u8, ConstU32<256>>,
+            ) -> DispatchResult {
+
+                let account = AccountByName::<T>::get(&name)
+                .ok_or(Error::<T>::UserNotFound)?;
+
+            
+                let stored_hash = PasswordHash::<T>::get(&account)
+                .ok_or(Error::<T>::UserNotFound)?;
+
+                let who = ensure_signed(origin)?;
+
+                let password_hash = blake2_256(&password[..]);
+
+                // Ensure the tweet exists
+                ensure!(Tweets::<T>::contains_key(&who, tweet_id), Error::<T>::NoneValue);
+
+                if password_hash == stored_hash {
+                    // Remove the tweet
+                    Tweets::<T>::remove(&who, tweet_id);
+
+                    // Reduce tweet count (optional)
+                    let tweet_count = TweetCount::<T>::get(&who);
+                    TweetCount::<T>::insert(&who, tweet_count.saturating_sub(1));
+
+                    Ok(())
+
+                } else {
+                    Self::deposit_event(Event::LoginFailed { name });
+                    Err(Error::<T>::InvalidCredentials.into())
+                }
+
+            }
+
+            // DELETE: Delete user account (removes all data)
+            #[pallet::call_index(8)]
+            #[pallet::weight(<T as pallet::Config>::WeightInfo::delete_user())]
+            pub fn delete_user(
+                origin: OriginFor<T>,
+            ) -> DispatchResult {
+                let who = ensure_signed(origin)?;
+
+                // Remove name and mappings
+                if let Some(name) = Names::<T>::take(&who) {
+                    AccountByName::<T>::remove(&name);
+                }
+
+                // Remove birthday, password, tweets, and tweet count
+                Birthdays::<T>::remove(&who);
+                PasswordHash::<T>::remove(&who);
+                let tweet_count = TweetCount::<T>::get(&who);
+
+                for tweet_id in 0..tweet_count {
+                    Tweets::<T>::remove(&who, tweet_id);
+                }
+
+                TweetCount::<T>::remove(&who);
+
+                Ok(())
+            }
+
     }
 }

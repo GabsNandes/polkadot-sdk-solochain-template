@@ -294,13 +294,16 @@ pub mod pallet {
         #[pallet::weight(<T as pallet::Config>::WeightInfo::get_user_birthday())]
         pub fn get_user_birthday(
             origin: OriginFor<T>,
-            user: T::AccountId,
+            name: BoundedVec<u8, ConstU32<256>>,
         ) -> DispatchResult {
             ensure_signed(origin)?;
 
-            let birthday = Birthdays::<T>::get(&user).ok_or(Error::<T>::UserNotFound)?;
+            let account = AccountByName::<T>::get(&name)
+                .ok_or(Error::<T>::UserNotFound)?;
 
-            log::info!("User {:?} has birthday: {:?}", user, birthday);
+            let birthday = Birthdays::<T>::get(&account).ok_or(Error::<T>::UserNotFound)?;
+
+            log::info!("User {:?} has birthday: {:?}", name, birthday);
             Ok(())
         }
 
@@ -439,24 +442,37 @@ pub mod pallet {
             #[pallet::weight(<T as pallet::Config>::WeightInfo::delete_user())]
             pub fn delete_user(
                 origin: OriginFor<T>,
+                name: BoundedVec<u8, ConstU32<256>>,
+                password: BoundedVec<u8, ConstU32<256>>,
             ) -> DispatchResult {
-                let who = ensure_signed(origin)?;
+                
+
+                let account = AccountByName::<T>::get(&name)
+                .ok_or(Error::<T>::UserNotFound)?;
+
+                let stored_hash = PasswordHash::<T>::get(&account)
+                .ok_or(Error::<T>::UserNotFound)?;
+
+                let password_hash = blake2_256(&password[..]);
+
+                ensure!(password_hash == stored_hash, Error::<T>::InvalidCredentials);
+
 
                 // Remove name and mappings
-                if let Some(name) = Names::<T>::take(&who) {
+                if let Some(name) = Names::<T>::take(&account) {
                     AccountByName::<T>::remove(&name);
                 }
 
                 // Remove birthday, password, tweets, and tweet count
-                Birthdays::<T>::remove(&who);
-                PasswordHash::<T>::remove(&who);
-                let tweet_count = TweetCount::<T>::get(&who);
+                Birthdays::<T>::remove(&account);
+                PasswordHash::<T>::remove(&account);
+                let tweet_count = TweetCount::<T>::get(&account);
 
                 for tweet_id in 0..tweet_count {
-                    Tweets::<T>::remove(&who, tweet_id);
+                    Tweets::<T>::remove(&account, tweet_id);
                 }
 
-                TweetCount::<T>::remove(&who);
+                TweetCount::<T>::remove(&account);
 
                 Ok(())
             }

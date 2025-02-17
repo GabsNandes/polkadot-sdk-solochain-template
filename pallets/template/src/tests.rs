@@ -79,8 +79,8 @@ fn create_tweet_test() {
 		// Read pallet storage and assert an expected result.
 		// Assert that the correct event was deposited
 		System::assert_has_event(Event::NameStored { name: bounded_vec("Alice"), who: 1 }.into());
-		System::assert_has_event(Event::BirthdayStored { who: 1, year: 1990, month: 5, day: 4 }.into());
-		System::assert_has_event(Event::TweetCreated { who: 1, name: bounded_vec("Alice"), tweet_id: 0, timestamp: 0 }.into());
+		System::assert_has_event(Event::BirthdayStored { name: bounded_vec("Alice"), year: 1990, month: 5, day: 4 }.into());
+		System::assert_has_event(Event::TweetCreated { name: bounded_vec("Alice"), tweet_id: 0, timestamp: 0 }.into());
 		
 		assert_noop!(
 			TemplateModule::create_tweet(
@@ -205,24 +205,24 @@ fn delete_tweet_test() {
 		// Read pallet storage and assert an expected result.
 		// Assert that the correct event was deposited
 		System::assert_has_event(Event::NameStored { name: bounded_vec("Alice"), who: 1 }.into());
-		System::assert_has_event(Event::BirthdayStored { who: 1, year: 1990, month: 5, day: 4 }.into());
-		System::assert_has_event(Event::TweetCreated { who: 1, name: bounded_vec("Alice"), tweet_id: 0, timestamp: 0 }.into());
+		System::assert_has_event(Event::BirthdayStored { name: bounded_vec("Alice"), year: 1990, month: 5, day: 4 }.into());
+		System::assert_has_event(Event::TweetCreated { name: bounded_vec("Alice"), tweet_id: 0, timestamp: 0 }.into());
 		
 		assert_ok!(TemplateModule::delete_tweet(
-			RuntimeOrigin::signed(1), 
+			RuntimeOrigin::signed(1),
 			bounded_vec("Alice"), 
-			0,
 			bounded_vec("123"), 
+			0
 			));
 
 			assert_noop!(
                 TemplateModule::delete_tweet(
                     RuntimeOrigin::signed(1),
                     bounded_vec("Alice"),
-                    0,
-                    bounded_vec("123")
+                    bounded_vec("123"),
+					0
                 ),
-                Error::<Test>::NoneValue
+                Error::<Test>::TweetNotFound
             );
 
 
